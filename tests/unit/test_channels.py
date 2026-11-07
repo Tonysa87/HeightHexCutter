@@ -54,6 +54,27 @@ class TestDetect(unittest.TestCase):
         # resolution / version tokens never decide, wherever they are
         self.assertEqual(detect_channel("4k_rock_v2_rough_2048.png")[0], "Roughness")
 
+    def test_asset_words_do_not_beat_the_suffix(self):
+        cases = {
+            "T_Rusty_Metal_4K_B.png": "Base Color",
+            "T_Rough_Stone_4K_N.png": "Normal",
+            "T_Forest_Ground_Base_4K_N.png": "Normal",
+            "T_Color_Tiles_4K_H.png": "Height",
+            "RustyMetalAlbedo.png": "Base Color",
+            "RoughStoneColor.png": "Base Color",
+            "RockOcclusionRoughnessMetallic.png": "ORM",
+            "metal_plate_diff.png": "Base Color",
+        }
+        for name, want in cases.items():
+            with self.subTest(name=name):
+                self.assertEqual(detect_channel(name)[0], want)
+
+    def test_ignored_channel_words(self):
+        for name in ("leaf_translucency_color.png", "x_emissive_color.png", "metal_plate_preview.png",
+                     "rock_specular_color.png", "bark_opacity_mask.png", "rock_gloss.png"):
+            with self.subTest(name=name):
+                self.assertEqual(detect_channel(name)[0], None)
+
     def test_case_and_extensions(self):
         self.assertEqual(detect_channel("ROCK_ROUGHNESS.PNG")[0], "Roughness")
         self.assertEqual(detect_channel("E:\\tex\\set_4k\\rock_Normal.png")[0], "Normal")

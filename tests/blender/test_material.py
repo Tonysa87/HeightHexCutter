@@ -181,3 +181,32 @@ def test_source_material_untouched(ctx):
     after = (_tree_fingerprint(s.nt), {n: i.colorspace_settings.name for n, i in im.items()}, s.m.users)
     assert before == after
     assert all(o.material_slots[0].material == s.m for o in obs)
+
+
+def test_material_hhc_source_ao_fallback(ctx):
+    """Re-converting an HHC material whose sampler height is the AO fallback: still a fallback."""
+    m1 = build.build_material(collect.from_files(set_paths(ctx, "ambientcg_noheight")), "hhc_t_cg")
+    ms = collect.from_material(m1)
+    assert ms.maps["Height"].fallback, ms.summary()
+    m2 = build.build_material(ms, "hhc_t_cg2")
+    assert not _of(m2.node_tree, "ShaderNodeDisplacement")
+
+
+def test_material_hhc_source_color_fallback(ctx):
+    m1 = build.build_material(collect.from_files(set_paths(ctx, "noheight_noao")), "hhc_t_wall")
+    ms = collect.from_material(m1)
+    assert "Height" not in ms.maps or ms.maps["Height"].fallback, ms.summary()
+    m2 = build.build_material(ms, "hhc_t_wall2")
+    assert not _of(m2.node_tree, "ShaderNodeDisplacement")
+    assert any(n.label == "Height from Base Color (adjust)" for n in _of(m2.node_tree, "ShaderNodeValToRGB"))
+
+
+def test_material_colorspace_note(ctx):
+    im = _imgs(ctx, "megascans")
+    s = Src("csnote")
+    s.link(s.tex(im["T_rock_4K_BaseColor.png"]).outputs["Color"], s.bsdf.inputs["Base Color"])
+    s.link(s.tex(im["T_rock_4K_Roughness.png"]).outputs["Color"], s.bsdf.inputs["Roughness"])
+    im["T_rock_4K_Roughness.png"].colorspace_settings.name = "sRGB"
+    ms = collect.from_material(s.m)
+    assert "T_rock_4K_Roughness.png: colour space sRGB, expected Non-Color (not changed)" in ms.notes, ms.notes
+    assert im["T_rock_4K_Roughness.png"].colorspace_settings.name == "sRGB"

@@ -15,6 +15,8 @@ def check_object(ob):
         raise ValueError("Select an object to receive the new material")
     if ob.type not in MESH_LIKE or ob.data is None or not hasattr(ob.data, "materials"):
         raise ValueError(f"'{ob.name}' cannot hold materials")
+    if ob.data.library is not None or ob.data.override_library is not None:
+        raise ValueError(f"'{ob.name}' uses linked data: its materials cannot be changed")
 
 
 def _finish(ms, base_name, ob):
@@ -81,10 +83,18 @@ class _Convert:
     bl_options = {"REGISTER", "UNDO"}
 
     def run(self, fn, *args):
+        before = set(bpy.data.materials)
         try:
             mat, report = fn(*args)
-        except ValueError as e:
-            self.report({"ERROR"}, str(e))
+        except Exception as e:            # unreadable file, missing library...: leave nothing behind
+            for m in [m for m in bpy.data.materials if m not in before]:
+                for ob in bpy.data.objects:
+                    if ob.data is not None and hasattr(ob.data, "materials"):
+                        for i, slot_mat in enumerate(ob.data.materials):
+                            if slot_mat == m:
+                                ob.data.materials[i] = None
+                bpy.data.materials.remove(m)
+            self.report({"ERROR"}, str(e) if isinstance(e, ValueError) else f"HHC: {type(e).__name__}: {e}")
             return {"CANCELLED"}
         self.report({"INFO"}, report)
         return {"FINISHED"}

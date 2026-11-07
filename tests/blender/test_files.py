@@ -102,3 +102,44 @@ def test_files_reuse(ctx):
     assert len(bpy.data.images) == n, "images loaded twice"
     assert ms2.maps["Roughness"].image is ms.maps["Roughness"].image
     assert _cs(ms2.maps["Roughness"]) == "Linear Rec.709", "colour space of an existing image changed"
+
+
+def test_files_colorspace_note(ctx):
+    ms = collect.from_files(set_paths(ctx, "megascans"))
+    ms.maps["Normal"].image.colorspace_settings.name = "sRGB"
+    ms2 = collect.from_files(set_paths(ctx, "megascans"))
+    assert "T_rock_4K_Normal.png: colour space sRGB, expected Non-Color (not changed)" in ms2.notes, ms2.notes
+    assert not any("BaseColor" in n for n in ms2.notes), ms2.notes
+
+
+def test_files_float_basecolor(ctx):
+    im = bpy.data.images.new("hhc_t_float_diff", 8, 8, float_buffer=True)
+    im.pixels.foreach_set(np.random.default_rng(2).random(8 * 8 * 4, dtype=np.float32))
+    path = ctx.tmp + "\\hhc_t_float_diff.exr"
+    im.filepath_raw = path
+    im.file_format = "OPEN_EXR"
+    im.save()
+    bpy.data.images.remove(im)
+    ms = collect.from_files([path])
+    cs = ms.maps["Base Color"].image.colorspace_settings.name
+    assert cs != "sRGB", cs
+    os.remove(path)
+
+
+def test_uniform_prefilter(ctx):
+    """A non-uniform image is recognised from a small copy, without reading all its pixels."""
+    gen = _img("big_noise", (noise, noise, noise), size=512)
+    path = ctx.tmp + "\\hhc_t_big_noise.png"
+    gen.filepath_raw = path
+    gen.file_format = "PNG"
+    gen.save()
+    bpy.data.images.remove(gen)
+    big = bpy.data.images.load(path)
+    big.name = "hhc_t_big_noise_file"
+    n = uniform._full_reads
+    assert image_constant(big) is None
+    assert uniform._full_reads == n, "full read for an obviously non-uniform image"
+    solid = _img("big_solid", (const(0.25), const(0.25), const(0.25)), size=512)
+    assert image_constant(solid) is not None
+    assert uniform._full_reads == n + 1
+    os.remove(path)

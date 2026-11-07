@@ -25,10 +25,39 @@ def load_image(path):
 
 
 def _set_colorspace(img, channel):
+    if channel == "Base Color" and (img.is_float or os.path.splitext(img.filepath)[1].lower() in (".exr", ".hdr")):
+        for name in ("Linear Rec.709", "Linear"):   # EXR/HDR colour is stored linear
+            try:
+                img.colorspace_settings.name = name
+                return
+            except TypeError:
+                pass
+        return
     try:
         img.colorspace_settings.name = "sRGB" if channel == "Base Color" else "Non-Color"
     except TypeError:
         pass
+
+
+DATA_SPACES = {"Non-Color", "Raw", "Generic Data"}
+
+
+def colorspace_notes(ms):
+    """Note (never fix) images whose colour space looks wrong for their channel: they may be shared
+    with other materials, changing them would change those too."""
+    seen = set()
+    for ch, r in ms.maps.items():
+        im = r.image
+        if im is None or im in seen:
+            continue
+        seen.add(im)
+        cs = im.colorspace_settings.name
+        if ch == "Base Color":
+            bad, want = (cs in DATA_SPACES and not im.is_float), "sRGB"
+        else:
+            bad, want = (cs not in DATA_SPACES and "linear" not in cs.lower()), "Non-Color"
+        if bad:
+            ms.notes.append(f"{im.name}: colour space {cs}, expected {want} (not changed)")
 
 
 def resolve_constants(ms):
@@ -96,6 +125,7 @@ def from_files(paths):
             ms.maps.setdefault(ch, MapRef(orm, chan=c))
     resolve_constants(ms)
     _drop_unused(new, ms)
+    colorspace_notes(ms)
     return ms
 
 
@@ -232,11 +262,23 @@ def _read_sampler(ms, nt):
         co = gn.inputs["Sampler"].links[0].from_node
         if co.bl_idname != "NodeClosureOutput":
             continue
-        for item in ("Height", "Normal"):
-            if item in co.inputs and item not in ms.maps:
-                e = _first_image(co.inputs[item])
-                if e is not None:
-                    ms.maps[item] = MapRef(e[0].image, e[1] if item == "Height" else None)
+        if "Normal" in co.inputs and "Normal" not in ms.maps:
+            e = _first_image(co.inputs["Normal"])
+            if e is not None:
+                ms.maps["Normal"] = MapRef(e[0].image)
+        if "Height" in co.inputs and "Height" not in ms.maps:
+            leaves, nodes = upstream(co.inputs["Height"])
+            if leaves:
+                img, chan = leaves[0][0].image, leaves[0][1]
+                guess = image_channel(img)[0]
+                col = ms.maps.get("Base Color")
+                ao = ms.maps.get("AO")
+                if nodes or guess == "Base Color" or (col is not None and img == col.image):
+                    pass                  # Base Color fallback (through RGB to BW + ramp): rebuilt by build
+                elif guess == "AO" or (ao is not None and img == ao.image):
+                    ms.maps["Height"] = MapRef(img, chan, fallback=True)
+                else:
+                    ms.maps["Height"] = MapRef(img, chan)
         if "Normal Map" in gn.inputs:
             ms.normal_dx = gn.inputs["Normal Map"].default_value == "DirectX"
         if "Normal Strength" in gn.inputs and not gn.inputs["Normal Strength"].is_linked:
@@ -281,7 +323,8 @@ def from_material(mat):
                 ms.maps["Height"] = MapRef(e[0].image, e[1])
             if not d.inputs["Scale"].is_linked:
                 ms.disp_scale = d.inputs["Scale"].default_value
-    _read_sampler(ms, nt)
     _fill_in(ms, nt)
+    _read_sampler(ms, nt)
     resolve_constants(ms)
+    colorspace_notes(ms)
     return ms

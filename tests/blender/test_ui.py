@@ -112,3 +112,27 @@ def test_no_valid_object(ctx):
                 r = {"CANCELLED"}
             assert r == {"CANCELLED"}, (active, r)
     assert len(bpy.data.materials) == n, "a material was created without a valid object"
+
+
+def test_op_errors_leave_nothing(ctx):
+    _active_obj()
+    n = len(bpy.data.materials)
+    missing = ctx.tmp + "\\hhc_t_missing_diff.png"
+    with _Registered():
+        try:
+            r = bpy.ops.hhc.name_files(name="hhc_t_missing", files_json=json.dumps([missing]))
+        except RuntimeError:
+            r = {"CANCELLED"}
+        assert r == {"CANCELLED"}, r
+        assert len(bpy.data.materials) == n
+        orig = ui.build.assign_to_object          # fail after the material was built
+        ui.build.assign_to_object = lambda ob, mat: (_ for _ in ()).throw(RuntimeError("boom"))
+        try:
+            try:
+                r = bpy.ops.hhc.name_files(name="hhc_t_boom", files_json=json.dumps(set_paths(ctx, "megascans")))
+            except RuntimeError:
+                r = {"CANCELLED"}
+        finally:
+            ui.build.assign_to_object = orig
+    assert r == {"CANCELLED"}, r
+    assert "hhc_t_boom_HHC" not in bpy.data.materials, "half-built material left behind"
