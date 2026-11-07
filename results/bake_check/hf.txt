@@ -1,0 +1,1 @@
+{'bake_dbg_1spp': 40.57, 'bake_dbg_64spp': 11.63, 'bake_v1_1spp': 90.73, 'bake_v1_64spp': 30.4}
