@@ -2,3 +2,6 @@ __pycache__/
 renders/
 tools/.req/
 *.blend1
+dist/
+tests/fixtures/sets/
+.superpowers/
