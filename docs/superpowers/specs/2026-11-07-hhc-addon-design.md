@@ -219,3 +219,19 @@ All user-facing text, labels, reports, comments and file names in English.
 Exact node positions and spacing; frame colours; operator ids and class names; how the pixel
 uniformity check is implemented (numpy over `Image.pixels.foreach_get`, cached per image);
 report wording; the build script.
+
+## Changes after the first test round (2026-11-07, agreed with the user)
+- **Displacement is created but not connected.** In Bump mode Cycles re-evaluates the whole node at
+  offset points, each with its own random cell choice: straight lines along the screen axes on flat
+  surfaces, and about 2× the cost (boulder: 2.61 vs 1.24 ms/sample). The Displacement node is still
+  built (scale from the source) inside a frame labelled "Displacement (not connected)"; the material's
+  displacement method is left at Blender's default. The normal map carries the relief; an internal
+  Height Bump (next step, before 1.0) will add relief without these problems.
+- **Scale matches the source.** At conversion the HHC Scale (repeats per metre) is computed from the
+  target object: `Scale = source Mapping scale / metres per UV unit`, with metres per UV unit =
+  sqrt(world surface area / UV area) of the active UV map (object scale included). No usable UVs →
+  0.5 (2 m per texture). From image files the Mapping scale is 1. A converted HHC/AT source keeps
+  its own node settings instead.
+- **Object projection compensates the object scale** (node version 2): Scale means repeats per metre
+  whatever the object's scale, and non-uniform scale no longer stretches the texture.
+- The report warns when the object has no UV map (the UV projection would not work on it).
