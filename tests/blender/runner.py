@@ -115,7 +115,8 @@ def cleanup():
 
 
 def _ctx(root):
-    sets = root.rstrip("/") + "/tests/fixtures/sets"
+    # Blender reads a leading "//" as relative to the .blend: file paths need the "\\\\server\\share" form
+    sets = (root.rstrip("/") + "/tests/fixtures/sets").replace("/", "\\")
     tmp = bpy.app.tempdir or os.environ.get("TEMP", ".")
     return types.SimpleNamespace(root=root, sets=sets, tmp=tmp, cleanup=[])
 
