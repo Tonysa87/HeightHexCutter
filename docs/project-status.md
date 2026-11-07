@@ -1,4 +1,4 @@
-# Project status — 2026-11-07 (v0.5, add-on)
+# Project status — 2026-11-07 (v0.6)
 
 ## Where we are
 - **Add-on `height_hex_cutter`** (Blender extension, version 0.5.0): builds a new `<name>_HHC`

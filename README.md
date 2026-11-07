@@ -1,6 +1,6 @@
 # Height Hex Cutter (HHC)
 
-**Version 0.5**: working prototype, with known issues to fix before 1.0.
+**Version 0.6**: working add-on, tested; the internal Height Bump and a final test round come before 1.0.
 
 Anti-tiling for **natural PBR textures** (terrain, rock, weathered plaster, raw concrete) in
 **Blender 5.2**, built from native shader nodes only: no OSL, runs on the GPU in both **Cycles** and
@@ -17,7 +17,7 @@ you from an asset, a material of the file or a set of image files.
 
 ## Install
 
-1. `python3 build.py` → `dist/height_hex_cutter-0.5.0.zip` (or download it from the releases).
+1. `python3 build.py` → `dist/height_hex_cutter-0.6.0.zip` (or download it from the releases).
 2. Blender: *Edit → Preferences → Get Extensions → ⌄ → Install from Disk…* and pick the zip.
 
 ## Use

@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "height_hex_cutter"
-version = "0.5.0"
+version = "0.6.0"
 name = "Height Hex Cutter"
 tagline = "Cheap height-driven hex anti-tiling for natural PBR materials"
 maintainer = "Tonysa87"
