@@ -2,8 +2,10 @@
 
 
 def register():
-    pass
+    from . import ui
+    ui.register()
 
 
 def unregister():
-    pass
+    from . import ui
+    ui.unregister()
