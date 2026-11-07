@@ -71,7 +71,7 @@ reassigned), as the first slot if it has none. The status bar reports which file
 | Parameter | Meaning | Default |
 |---|---|---|
 | Projection | **UV** (uses Vector, or the active UV map when nothing is connected) / **Object** (no UVs, projection on the 2 dominant axes). The branch not chosen is not compiled | Object |
-| Scale | UV: repeats per UV unit. Object: repeats per metre, whatever the object's scale (set at conversion from the source size) | 1 |
+| Scale | UV: repeats per UV unit. Object: repeats per object unit; like UV textures, the texture follows the object's scale (apply the scale, Ctrl+A, for metres). Set at conversion from the source size | 1 |
 | Cell Size | distance between cell centres, in texture repeats | 1 |
 | Rotation | random rotation per cell (0 = none, 1 = full turn) | 1 |
 | Seed | random variant | 0 |

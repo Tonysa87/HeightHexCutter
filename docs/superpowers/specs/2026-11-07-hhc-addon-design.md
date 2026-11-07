@@ -229,9 +229,10 @@ report wording; the build script.
   Height Bump (next step, before 1.0) will add relief without these problems.
 - **Scale matches the source.** At conversion the HHC Scale (repeats per metre) is computed from the
   target object: `Scale = source Mapping scale / metres per UV unit`, with metres per UV unit =
-  sqrt(world surface area / UV area) of the active UV map (object scale included). No usable UVs →
+  sqrt(object-space surface area / UV area) of the active UV map. No usable UVs →
   0.5 (2 m per texture). From image files the Mapping scale is 1. A converted HHC/AT source keeps
   its own node settings instead.
-- **Object projection compensates the object scale** (node version 2): Scale means repeats per metre
-  whatever the object's scale, and non-uniform scale no longer stretches the texture.
+- **Object scale is not compensated in the node** (decided after trying it): like a UV texture, the
+  texture follows the object's scale; apply the scale for real-world size. estimate_scale works in
+  object space, so the converted size matches the source on scaled objects too.
 - The report warns when the object has no UV map (the UV projection would not work on it).

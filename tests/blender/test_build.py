@@ -160,7 +160,7 @@ def _plane(name, size=2.0, uv=True, scale=(1, 1, 1)):
 
 def test_estimate_scale(ctx):
     assert abs(build.estimate_scale(_plane("p2")) - 0.5) < 1e-3          # 2 m per UV unit
-    assert abs(build.estimate_scale(_plane("p2s", scale=(2, 2, 1))) - 0.25) < 1e-3
+    assert abs(build.estimate_scale(_plane("p2s", scale=(2, 2, 1))) - 0.5) < 1e-3   # object space, like UVs
     assert abs(build.estimate_scale(_plane("p2m"), uv_scale=2.0) - 1.0) < 1e-3
     assert build.estimate_scale(_plane("nouv", uv=False)) == build.FALLBACK_SCALE == 0.5
 

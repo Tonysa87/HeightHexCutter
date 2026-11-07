@@ -327,8 +327,8 @@ def build_material(ms, base_name, ob=None):
 
 
 def estimate_scale(ob, uv_scale=1.0):
-    """HHC Scale (repeats per metre) that gives the texture the size it has with the object's UVs:
-    uv_scale / (metres per UV unit), metres per UV unit = sqrt(world area / UV area) of the active UV map."""
+    """HHC Scale (repeats per object unit) that gives the texture the size it has with the object's UVs:
+    uv_scale / (object units per UV unit), from sqrt(object-space area / UV area) of the active UV map."""
     import numpy as np
     me = getattr(ob, "data", None)
     if ob is None or ob.type != "MESH" or me is None or me.uv_layers.active is None:
@@ -343,7 +343,7 @@ def estimate_scale(ob, uv_scale=1.0):
     me.loops.foreach_get("vertex_index", lv)
     co = np.empty(len(me.vertices) * 3, np.float64)
     me.vertices.foreach_get("co", co)
-    co = co.reshape(-1, 3) @ np.array(ob.matrix_world.to_3x3()).T
+    co = co.reshape(-1, 3)              # object space: like UV textures, the result follows the object scale
     uv = np.empty(len(me.loops) * 2, np.float64)
     me.uv_layers.active.data.foreach_get("uv", uv)
     uv = uv.reshape(-1, 2)

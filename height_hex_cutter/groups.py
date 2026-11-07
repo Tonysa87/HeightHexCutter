@@ -10,7 +10,7 @@ import bpy
 from .nodes import ngkit, tile
 
 GROUP_NAME = tile.GROUP_NAME
-HHC_GROUP_VERSION = 2
+HHC_GROUP_VERSION = 1
 last_notice = ""              # set when ensure_group() updated an older group (shown in the report)
 STAMP = "hhc_version"
 

@@ -152,18 +152,8 @@ def _branch_object(b, gi, gy):
     geo = b.node("ShaderNodeNewGeometry")
     vt = b.node("ShaderNodeVectorTransform", vector_type="NORMAL", convert_from="WORLD", convert_to="OBJECT")
     b.link(geo.outputs["Normal"], vt.inputs[0])
-    # object coordinates in metres: times the object scale (length of each object axis in world space),
-    # so Scale means repeats per metre on any object, and non-uniform scale does not stretch the texture
-    axes = []
-    for ax in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)):
-        t = b.node("ShaderNodeVectorTransform", vector_type="VECTOR", convert_from="OBJECT", convert_to="WORLD")
-        t.inputs[0].default_value = ax
-        axes.append(b.vec("LENGTH", t.outputs[0]))
-    OS = b.comb(*axes)                                   # object scale per axis
-    p_obj = b.vec("MULTIPLY", tc.outputs["Object"], OS)
-    P = b.vec("SCALE", _vmix(b, fw, p_obj, geo.outputs["Position"]), scale=gi["Scale"])
-    # normals in the same metric object space (object normal / scale): consistent with P on scaled objects
-    N = b.vec("NORMALIZE", _vmix(b, fw, b.vec("DIVIDE", vt.outputs[0], OS), geo.outputs["Normal"]))
+    P = b.vec("SCALE", _vmix(b, fw, tc.outputs["Object"], geo.outputs["Position"]), scale=gi["Scale"])
+    N = b.vec("NORMALIZE", _vmix(b, fw, vt.outputs[0], geo.outputs["Normal"]))
     S = b.vec("SIGN", b.vec("ADD", N, (1e-7, 1e-7, 1e-7)))
     sh = gi["Sharpness"]
     aw = b.vec("ADD", b.vec("POWER", b.vec("ABSOLUTE", N), b.comb(sh, sh, sh)), (0.0, 1e-6, 2e-6))  # tie-break
@@ -223,7 +213,7 @@ def _branch_object(b, gi, gy):
               b.vec("SCALE", Nax, scale=b.math("MULTIPLY", tz, b.math("ABSOLUTE", b.vec("DOT_PRODUCT", N, Nax)))))
     n = b.vec("NORMALIZE", n)
     vt2 = b.node("ShaderNodeVectorTransform", vector_type="NORMAL", convert_from="OBJECT", convert_to="WORLD")
-    b.link(b.vec("MULTIPLY", n, OS), vt2.inputs[0])      # metric object space -> object space -> world
+    b.link(n, vt2.inputs[0])
     nw = b.vec("NORMALIZE", _vmix(b, fw, vt2.outputs[0], n))
     o["Normal"] = _vmix(b, _has_normal(b, fin.outputs["Normal"]), geo.outputs["Normal"], nw)
     return o
@@ -258,7 +248,7 @@ def build_tile(name=GROUP_NAME):
     b.inp("Projection", "NodeSocketMenu", desc="UV: texture coordinates. Object: projected from the object, no UVs")
     vec_in = b.inp("Vector", "NodeSocketVector", desc="UV mode only: coordinates (empty = active UV map)")
     vec_in.hide_value = True
-    b.inp("Scale", "NodeSocketFloat", 1.0, 0.001, 1000.0, "UV: repeats per UV unit. Object: repeats per metre (object scale included)")
+    b.inp("Scale", "NodeSocketFloat", 1.0, 0.001, 1000.0, "UV: repeats per UV unit. Object: repeats per object unit (apply the object scale for metres)")
     _blend_inputs(b)
     _object_inputs(b)
     _outputs(b)
