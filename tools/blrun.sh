@@ -1,22 +1,21 @@
 #!/bin/bash
 # Run a Python snippet in the open Blender with the project modules preloaded:
-#   AT = nodes/build_v0.py   V1/V2/V3 = nodes/build_v1/2/3.py   BE = bench/bench.py
-#   EB = bench/eevee_band_test.py   NC = bench/normal_check.py   PT = bench/projection_test.py
+#   HHC = height_hex_cutter (the add-on package, freshly reloaded)   BE = bench/bench.py
 #   OUT = renders/ (Windows UNC path to this project's renders folder)
-# usage: tools/blrun.sh 'gs, lost = V3.build_all(); result = {"lost": lost}'
+# usage: tools/blrun.sh 'g = HHC.groups.ensure_group(); result = {"group": g.name}'
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$HERE")"
 mkdir -p "$ROOT/renders" "$ROOT/tools/.req"
 F=$(mktemp "$ROOT/tools/.req/req_XXXX.py")
 UNC="//wsl.localhost/Ubuntu-24.04$ROOT"
 {
-echo 'import importlib.util, bpy'
-echo 'def _load(n, p):'
-echo '    s = importlib.util.spec_from_file_location(n, p); m = importlib.util.module_from_spec(s); s.loader.exec_module(m); return m'
+echo 'import sys, importlib, bpy'
 echo "ROOT = \"$UNC\""
 echo 'OUT = ROOT + "/renders"'
-for pair in AT:nodes/build_v0 V1:nodes/build_v1 V2:nodes/build_v2 V3:nodes/build_v3 BE:bench/bench EB:bench/eevee_band_test NC:bench/normal_check PT:bench/projection_test; do
-  echo "${pair%%:*} = _load(\"at_${pair%%:*}\", ROOT + \"/${pair#*:}.py\")"
-done
+echo 'if ROOT not in sys.path: sys.path.insert(0, ROOT)'
+echo 'for _m in [m for m in sys.modules if m.startswith(("height_hex_cutter", "bench"))]: del sys.modules[_m]'
+echo 'import height_hex_cutter as HHC'
+echo 'from height_hex_cutter import groups, collect, build, ui'
+echo 'from bench import bench as BE'
 echo "$1"
 } > "$F"
 "$HERE/bmcp.sh" "$F"

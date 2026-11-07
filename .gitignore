@@ -5,3 +5,4 @@ tools/.req/
 dist/
 tests/fixtures/sets/
 .superpowers/
+tests/fixtures/v05/

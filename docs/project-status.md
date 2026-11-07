@@ -1,20 +1,17 @@
-# Project status — 2026-11-07 (v0.5)
+# Project status — 2026-11-07 (v0.5, add-on)
 
 ## Where we are
-- **Single node `AT Anti-Tile`** (`nodes/build_v3.py`), with a Projection menu UV / Object.
-  - Height and normal map reach it through a closure.
+- **Add-on `height_hex_cutter`** (Blender extension, version 0.5.0): builds a new `<name>_HHC`
+  material from a material asset (Asset Browser right-click), a material of the file or a set of image
+  files (Shader Editor N panel, tab HHC). Design: `docs/superpowers/specs/2026-11-07-hhc-addon-design.md`.
+- **Single node `HHC Anti-Tile`** (`height_hex_cutter/nodes/tile.py`), with a Projection menu UV / Object
+  and a Normal Map menu OpenGL / DirectX; the group is version-stamped and updated safely.
+  - Height and normal map reach it through a closure (the add-on builds it).
   - All other maps are read only once.
-- **Material in use:** "Painted Damaged Wall AT" in the test file `anti-tile1.blend` (not included
-  in the repository), assigned to a plane, a broken wall and an antique sculpture.
-  - Values: Projection Object, Scale 2/m, Height Influence 1.5, Softness 0.005, Edge Warp 1.0,
-    Sharpness 4.
-  - Displacement (Bump) is still connected to the material output: a deliberate choice for now,
-    but it causes streaks (see open issues).
-- **Test scene `AT_Bench`** in the same file:
-  - copies of the three objects with their own data: AT_Plane, AT_Wall, AT_Statue;
-  - cameras: AT_Cam (orthographic, top view), AT_CamClose, AT_CamObj, AT_CamStatue, AT_CamWall;
-  - light AT_Sun.
-  - Unassigned test materials are lost on save unless they have a fake user.
+- **Tests:** 31 Blender tests (`tools/hhc_test.sh`, only in a file named `HHC.blend`) and pure-Python
+  unit tests; a slow cost check against v0.5 (`tools/hhc_test.sh test_cost`).
+- **Cost of the HHC node vs v0.5 `AT Anti-Tile`** (same material, 512², fixtures, RTX 4090):
+  Cycles 3.716 vs 3.704 ms/sample (+0.3%), EEVEE compile 1.31 vs 1.34 s; +5 nodes, about 3 compiled.
 
 ## Measured costs
 
@@ -62,8 +59,7 @@ RTX 4090, Cycles in ms per sample; median of 3, viewports paused.
      own normal; in Object mode the node also picks the projection from that normal, so adjacent
      faces can read a different height at the same point. Workaround for now: smooth shading when
      using true displacement.
-3. **Interface.** The closure zone has to be built by hand. → Proposal: an "add Anti-Tile" operator
-   that creates the zone and moves height and normal into it automatically.
+3. ~~**Interface.**~~ Solved by the add-on: the whole material, closure included, is built in one action.
 4. **Edge Warp costs even at 0.** An On/Off menu switch doesn't work: with several Menu Switches on
    the same menu, the menu ends up with no items. A single Bundle-type switch could solve it, but the
    code needs restructuring.
@@ -75,12 +71,13 @@ RTX 4090, Cycles in ms per sample; median of 3, viewports paused.
 8. **Materials without a height map:** no fallback. → Proposal: use the colour luminance.
 9. **The Space menu of old test materials** is sometimes not restored by the rebuild: it falls back
    to the first item, Object.
-10. **Names:** node groups still use the provisional "AT …" prefix.
+10. ~~**Names.**~~ Solved: the node is `HHC Anti-Tile`; old `AT` materials are still recognised as sources.
 
 ## Proposed next steps, in order
 1. Internal Height Bump, without noise and without the ×3 cost, plus a warning about Displacement in
    Bump mode.
-2. One-click operator to create the closure. Then packaging as an extension: final names and panel.
+2. ~~One-click operator and extension packaging~~ (done: the add-on). Next: two independent test rounds,
+   fixes, then promotion to v1.0.
 3. Macro variation, for repetition seen from afar.
 4. UV bake, with the deterministic mode for height and displacement.
 5. Optimise EEVEE compilation: the choice among 6 candidates can be written with fewer nodes.

@@ -17,6 +17,7 @@ import bpy
 PREFIX = "hhc_t_"
 TEST_FILE = "HHC.blend"
 HHC_GROUP_PREFIXES = ("HHC Anti-Tile", "_test_", "_v05_")
+SLOW = {"test_cost"}           # run only when the pattern names them
 
 
 def _is_test_name(name):
@@ -104,6 +105,11 @@ def cleanup():
         bpy.data.collections.remove(c)
     for me in [m for m in bpy.data.meshes if _is_test_name(m.name) and m.users == 0]:
         bpy.data.meshes.remove(me)
+    for sc in [s for s in bpy.data.scenes if _is_test_name(s.name)]:
+        bpy.data.scenes.remove(sc)
+    for coll in (bpy.data.cameras, bpy.data.lights):
+        for d in [d for d in coll if _is_test_name(d.name) and d.users == 0]:
+            coll.remove(d)
     for m in [m for m in bpy.data.materials if _is_test_name(m.name)]:
         bpy.data.materials.remove(m)
     for im in [im for im in bpy.data.images if _is_fixture_image(im)]:
@@ -118,7 +124,7 @@ def _ctx(root):
     # Blender reads a leading "//" as relative to the .blend: file paths need the "\\\\server\\share" form
     sets = (root.rstrip("/") + "/tests/fixtures/sets").replace("/", "\\")
     tmp = bpy.app.tempdir or os.environ.get("TEMP", ".")
-    return types.SimpleNamespace(root=root, sets=sets, tmp=tmp, cleanup=[])
+    return types.SimpleNamespace(root=root, sets=sets, tmp=tmp, cleanup=[], info={})
 
 
 def _test_modules(root):
@@ -136,13 +142,15 @@ def _test_modules(root):
 def run(root, pattern=""):
     if bpy.path.basename(bpy.data.filepath) != TEST_FILE:
         return {"error": f"refusing to run: open file is {bpy.data.filepath!r}, not {TEST_FILE}"}
-    res = {"file": bpy.data.filepath, "passed": [], "failed": []}
+    res = {"file": bpy.data.filepath, "passed": [], "failed": [], "info": {}}
     before = fingerprint()
     try:
         mods, errors = _test_modules(root)
         res["failed"] += [e for e in errors if not pattern or pattern in e[0]]
         for mod in mods:
             mname = mod.__name__.rsplit(".", 1)[1]
+            if mname in SLOW and not (pattern and pattern in mname):
+                continue
             for fname in sorted(n for n in dir(mod) if n.startswith("test_")):
                 fn = getattr(mod, fname)
                 if not callable(fn) or (pattern and pattern not in mname and pattern not in fname):
@@ -154,6 +162,8 @@ def run(root, pattern=""):
                 except Exception:
                     res["failed"].append([f"{mname}.{fname}", traceback.format_exc(limit=6)])
                 finally:
+                    if ctx.info:
+                        res["info"][f"{mname}.{fname}"] = ctx.info
                     for idb in reversed(ctx.cleanup):
                         _remove(idb)
                     cleanup()
