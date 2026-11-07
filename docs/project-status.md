@@ -56,6 +56,12 @@ RTX 4090, Cycles in ms per sample; median of 3, viewports paused.
    already chosen*, so no noise and no triple cost.
 2. **True displacement and height bake:** a deterministic mode will be needed, i.e. a hard cut with
    no random band.
+   - Confirmed on a flat-shaded Roundcube (Subdivision 2, Object projection, Displacement and
+     Bump): dark slits open along face edges; they vanish with smooth shading or with Bump Only.
+     Cause: with flat shading the vertices are split per face and each face is displaced along its
+     own normal; in Object mode the node also picks the projection from that normal, so adjacent
+     faces can read a different height at the same point. Workaround for now: smooth shading when
+     using true displacement.
 3. **Interface.** The closure zone has to be built by hand. → Proposal: an "add Anti-Tile" operator
    that creates the zone and moves height and normal into it automatically.
 4. **Edge Warp costs even at 0.** An On/Off menu switch doesn't work: with several Menu Switches on
