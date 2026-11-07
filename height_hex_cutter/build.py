@@ -4,6 +4,7 @@ import copy
 import bpy
 
 from . import groups
+from .collect import image_channel
 
 FRAME_LABELS = {"sampler": "Sampler", "textures": "Textures", "displacement": "Displacement"}
 DISP_SCALE = 0.02
@@ -56,6 +57,101 @@ def _channel_socket(b, tex, chan, seps, x, y):
         b.link(tex.outputs["Color"], sp.inputs[0])
         seps[tex.name] = sp
     return seps[tex.name].outputs[CHAN_OUT[chan]]
+
+
+# ---------------------------------------------------------------------------- copying source nodes
+_SKIP = {"rna_type", "name", "location", "location_absolute", "parent", "select", "dimensions", "type",
+         "inputs", "outputs", "internal_links", "is_active_output", "width_hidden", "warning_propagation"}
+
+
+def _sock(coll, src):
+    """Socket of `coll` matching `src` by identifier, then name, then position."""
+    for x in coll:
+        if x.identifier == src.identifier:
+            return x
+    if src.name in coll:
+        return coll[src.name]
+    i = list(src.node.inputs if src.is_output is False else src.node.outputs).index(src)
+    return coll[i] if i < len(coll) else None
+
+
+def _copy_ramp(dst, src):
+    d, s = dst.color_ramp, src.color_ramp
+    d.interpolation, d.color_mode, d.hue_interpolation = s.interpolation, s.color_mode, s.hue_interpolation
+    while len(d.elements) < len(s.elements):
+        d.elements.new(0.5)
+    while len(d.elements) > len(s.elements):
+        d.elements.remove(d.elements[-1])
+    for de, se in zip(d.elements, s.elements):
+        de.position, de.color = se.position, tuple(se.color)
+
+
+def _copy_curves(dst, src):
+    d, s = dst.mapping, src.mapping
+    for dc, sc in zip(d.curves, s.curves):
+        while len(dc.points) < len(sc.points):
+            dc.points.new(0.5, 0.5)
+        while len(dc.points) > len(sc.points):
+            dc.points.remove(dc.points[-1])
+        for dp, sp in zip(dc.points, sc.points):
+            dp.location, dp.handle_type = tuple(sp.location), sp.handle_type
+    d.update()
+
+
+def copy_node(nt, src):
+    """Copy of `src` in `nt`: same type, properties and unlinked input values."""
+    n = nt.nodes.new(src.bl_idname)
+    props = [p.identifier for p in src.bl_rna.properties if not p.is_readonly and p.identifier not in _SKIP]
+    for _ in range(2):                    # twice: some properties (data_type) change which others exist
+        for k in props:
+            try:
+                setattr(n, k, getattr(src, k))
+            except (AttributeError, TypeError, ValueError, RuntimeError):
+                pass
+    for si in src.inputs:
+        di = _sock(n.inputs, si)
+        if di is not None and hasattr(si, "default_value"):
+            try:
+                di.default_value = si.default_value
+            except (AttributeError, TypeError, ValueError):
+                pass
+    if getattr(src, "color_ramp", None) is not None:
+        _copy_ramp(n, src)
+    if getattr(src, "mapping", None) is not None and hasattr(src.mapping, "curves"):
+        _copy_curves(n, src)
+    return n
+
+
+def _copy_chain(b, ms, r, texs, bsdf):
+    """Recreate the source nodes between the image(s) and the Principled input `r.target`."""
+    names = {n.name for n in r.chain}
+    sb = ms.source_bsdf
+    copies = {}
+    for n in r.chain:
+        if n.bl_idname != "ShaderNodeTexImage":
+            c = copy_node(b.nt, n)
+            c.location = (n.location_absolute - sb.location_absolute) + bsdf.location
+            copies[n.name] = c
+    for l in ms.source_tree.links:
+        if l.is_muted or l.from_node.name not in names:
+            continue
+        if l.to_node.name in copies:
+            to = _sock(copies[l.to_node.name].inputs, l.to_socket)
+        elif l.to_node == sb and l.to_socket.name == r.target:
+            to = bsdf.inputs[r.target]
+        else:
+            continue
+        fn = l.from_node
+        src_node = texs[fn.image.name] if fn.bl_idname == "ShaderNodeTexImage" else copies[fn.name]
+        frm = _sock(src_node.outputs, l.from_socket)
+        if frm is not None and to is not None:
+            b.link(frm, to)
+    return list(copies.values())
+
+
+def _label_for(img, default):
+    ch = image_channel(img)[0]
+    return default if ch is None else ch
 
 
 def _set_input(sock, v):
@@ -148,21 +244,38 @@ def build_material(ms, base_name):
 
     # textures read once, through the HHC Vector
     texs, seps, socks, y = {}, {}, {}, 500
+    chained = [ch for ch in ("Base Color", "Roughness", "Metallic")
+               if ms.maps.get(ch) is not None and ms.maps[ch].chain and ms.maps[ch].image is not None]
+
+    def tex(img, label):
+        nonlocal y
+        if img.name not in texs:
+            texs[img.name] = _image_node(b, img, -350, y, label, hhc.outputs["Vector"])
+            y -= 300
+        return texs[img.name]
+
     for ch in TEXTURE_ORDER:
         r = ms.maps.get(ch)
         if r is None or r.image is None:
             continue
-        if r.image.name not in texs:
-            label = "ORM" if r.chan is not None else ch
-            texs[r.image.name] = _image_node(b, r.image, -350, y, label, hhc.outputs["Vector"])
-            y -= 300
-        t = texs[r.image.name]
+        if ch in chained:
+            for n in r.chain:
+                if n.bl_idname == "ShaderNodeTexImage":
+                    tex(n.image, ch if n.image == r.image else _label_for(n.image, "Texture"))
+            continue
+        if ch == "AO" and "Base Color" in chained:
+            continue                      # the source decides how AO is used (copied with its chain)
+        t = tex(r.image, "ORM" if r.chan is not None else ch)
         socks[ch] = _channel_socket(b, t, r.chan, seps, -80, t.location.y)
     b.frame("textures", list(texs.values()) + list(seps.values()))
+    for ch in chained:
+        _copy_chain(b, ms, ms.maps[ch], texs, bsdf)
 
     _apply_principled(bsdf, ms.principled)
     col = ms.maps.get("Base Color")
-    if "Base Color" in socks:
+    if "Base Color" in chained:
+        pass
+    elif "Base Color" in socks:
         if "AO" in socks:
             mix = b.node("ShaderNodeMix", 30, 520, data_type="RGBA", blend_type="MULTIPLY")
             mix.inputs["Factor"].default_value = 1.0
@@ -175,6 +288,8 @@ def build_material(ms, base_name):
         _set_input(bsdf.inputs["Base Color"], col.constant)
     for ch in ("Roughness", "Metallic"):
         r = ms.maps.get(ch)
+        if ch in chained:
+            continue
         if ch in socks:
             b.link(socks[ch], bsdf.inputs[ch])
         elif r is not None and r.constant is not None:

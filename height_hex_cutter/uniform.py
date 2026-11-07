@@ -2,8 +2,10 @@
 import numpy as np
 
 TOL = 1.0 / 255.0
-CACHE = "hhc_uniform"
 _CH = {"R": 0, "G": 1, "B": 2}
+# (image name, file path, size) -> per-channel values. Kept in memory: images are never written to,
+# they may belong to the user's source material.
+_cache = {}
 
 
 def uniform_value(arr, tol=TOL):
@@ -15,14 +17,14 @@ def uniform_value(arr, tol=TOL):
 
 
 def _key(img):
-    return f"{img.filepath or img.name}|{img.size[0]}x{img.size[1]}"
+    return (img.name_full, img.filepath, tuple(img.size))
 
 
 def _read(img):
-    """Per-channel uniform values of an image (R, G, B), -1.0 where not uniform. Cached on the image."""
-    c = img.get(CACHE)
-    if c is not None and c.get("key") == _key(img):
-        return [c["R"], c["G"], c["B"]]
+    """Per-channel uniform values of an image (R, G, B), -1.0 where not uniform. Cached in memory."""
+    k = _key(img)
+    if k in _cache:
+        return list(_cache[k])
     n = img.channels
     px = np.empty(img.size[0] * img.size[1] * n, np.float32)
     img.pixels.foreach_get(px)
@@ -32,7 +34,7 @@ def _read(img):
         v = uniform_value(px[:, min(i, n - 1)])
         vals.append(-1.0 if v is None else v)
     del px
-    img[CACHE] = {"key": _key(img), "R": vals[0], "G": vals[1], "B": vals[2]}
+    _cache[k] = tuple(vals)
     return vals
 
 

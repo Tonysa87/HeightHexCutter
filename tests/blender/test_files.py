@@ -3,7 +3,8 @@ import numpy as np
 
 import bpy
 
-from height_hex_cutter.uniform import CACHE, image_constant
+from height_hex_cutter import uniform
+from height_hex_cutter.uniform import image_constant
 
 
 def _img(name, rgb_fn, size=16):
@@ -33,8 +34,9 @@ def test_image_constant(ctx):
     assert abs(image_constant(packed, "G") - 0.5) <= 1 / 255
     assert image_constant(packed, "R") is None
     assert image_constant(packed, "B") == 0.0
-    # cached: the pixels are not read again for the same file/size
-    assert CACHE in packed
+    # cached in memory, never on the image (images may belong to the user's source material)
+    assert len(packed.keys()) == 0, list(packed.keys())
+    assert any(k[0] == packed.name_full for k in uniform._cache), "not cached"
     px = np.random.default_rng(5).random(16 * 16 * 4, dtype=np.float32)
     packed.pixels.foreach_set(px)
     assert abs(image_constant(packed, "G") - 0.5) <= 1 / 255, "second call re-read the pixels"

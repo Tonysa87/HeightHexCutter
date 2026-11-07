@@ -23,6 +23,8 @@ class MapSet:
     principled: dict = field(default_factory=dict)
     ignored: list = field(default_factory=list)
     notes: list = field(default_factory=list)
+    source_tree: object = None         # node tree the chains were read from (from_material only)
+    source_bsdf: object = None         # its Principled BSDF
 
     def summary(self):
         parts = []
