@@ -4,7 +4,7 @@ import os
 
 import bpy
 
-from . import build, collect
+from . import build, collect, groups
 
 MESH_LIKE = {"MESH", "CURVE", "SURFACE", "META", "FONT", "CURVES", "POINTCLOUD", "VOLUME"}
 
@@ -20,9 +20,14 @@ def check_object(ob):
 
 
 def _finish(ms, base_name, ob):
-    mat = build.build_material(ms, base_name)
+    mat = build.build_material(ms, base_name, ob)
     build.assign_to_object(ob, mat)
-    report = f"{mat.name}: {ms.summary()}"
+    hhc = next(n for n in mat.node_tree.nodes if n.bl_idname == "ShaderNodeGroup")
+    report = f"{mat.name}: {ms.summary()} | Scale {hhc.inputs['Scale'].default_value:.3g}"
+    if groups.last_notice:
+        report += " | " + groups.last_notice
+    if ob.type == "MESH" and not ob.data.uv_layers:
+        report += " | the object has no UV map: the UV projection would not work on it"
     if ob.data.users > 1:
         report += f" | mesh shared by {ob.data.users} objects: the slot was added to all of them"
     return mat, report
@@ -74,8 +79,11 @@ def convert_asset(path, name, ob):
             bpy.data.node_groups.remove(g)
         for im in [i for i in bpy.data.images if i not in before["images"] and i.users == 0]:
             bpy.data.images.remove(im)
-        for lib in [lb for lb in bpy.data.libraries if lb not in before["libraries"] and lb.users == 0]:
-            bpy.data.libraries.remove(lib)
+        used = {i.library for coll in (bpy.data.materials, bpy.data.images, bpy.data.node_groups,
+                                       bpy.data.textures, bpy.data.meshes, bpy.data.objects,
+                                       bpy.data.collections, bpy.data.worlds) for i in coll if i.library}
+        for lib in [lb for lb in bpy.data.libraries if lb not in before["libraries"] and lb not in used]:
+            bpy.data.libraries.remove(lib)    # Blender keeps a weak reference to append sources
 
 
 # ---------------------------------------------------------------------------- operators
@@ -159,6 +167,11 @@ class HHC_OT_from_files(bpy.types.Operator):
     filter_folder: bpy.props.BoolProperty(default=True, options={"HIDDEN", "SKIP_SAVE"})
 
     def invoke(self, context, event):
+        try:
+            check_object(context.view_layer.objects.active)
+        except ValueError as e:
+            self.report({"ERROR"}, str(e))
+            return {"CANCELLED"}
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
 
@@ -219,13 +232,26 @@ def _asset_menu(self, context):
 CLASSES = (HHC_OT_from_asset, HHC_OT_from_material, HHC_OT_from_files, HHC_OT_name_files, HHC_PT_panel)
 
 
+def _drop_menu_copies(menu):
+    """Remove menu entries left by another copy of this add-on (e.g. one run from source)."""
+    for f in list(menu._dyn_ui_initialize()):
+        if getattr(f, "__name__", "") == "_asset_menu" and \
+                getattr(f, "__module__", "").endswith("height_hex_cutter.ui") and f is not _asset_menu:
+            menu.remove(f)
+
+
 def register():
     for c in CLASSES:
         bpy.utils.register_class(c)
-    bpy.types.ASSETBROWSER_MT_context_menu.append(_asset_menu)
+    menu = bpy.types.ASSETBROWSER_MT_context_menu
+    _drop_menu_copies(menu)
+    menu.append(_asset_menu)
 
 
 def unregister():
-    bpy.types.ASSETBROWSER_MT_context_menu.remove(_asset_menu)
+    try:
+        bpy.types.ASSETBROWSER_MT_context_menu.remove(_asset_menu)
+    except ValueError:
+        pass
     for c in reversed(CLASSES):
         bpy.utils.unregister_class(c)

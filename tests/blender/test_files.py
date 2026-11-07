@@ -143,3 +143,31 @@ def test_uniform_prefilter(ctx):
     assert image_constant(solid) is not None
     assert uniform._full_reads == n + 1
     os.remove(path)
+
+
+def test_files_duplicates_reported(ctx):
+    paths = set_paths(ctx, "megascans") + [p for p in set_paths(ctx, "polyhaven_orm") if "diff" in p] + \
+        [ctx.sets + "\\notes.txt"]
+    ms = collect.from_files(paths)
+    assert "rock_diff_2k.png (duplicate Base Color)" in ms.ignored, ms.ignored
+    assert "notes.txt (not an image)" in ms.ignored, ms.ignored
+
+
+def test_uniform_cache_reload(ctx):
+    path = ctx.tmp + "\\hhc_t_reload.png"
+    a = _img("reload_a", (const(0.2), const(0.2), const(0.2)), size=128)
+    a.filepath_raw = path
+    a.file_format = "PNG"
+    a.save()
+    img = bpy.data.images.load(path)
+    img.name = "hhc_t_reload_file"
+    assert image_constant(img) is not None
+    import time
+    time.sleep(1.1)                          # file times have 1-2 s resolution on some disks
+    b = _img("reload_b", (noise, noise, noise), size=128)
+    b.filepath_raw = path
+    b.file_format = "PNG"
+    b.save()
+    img.reload()
+    assert image_constant(img) is None, "stale cache after the image file changed"
+    os.remove(path)

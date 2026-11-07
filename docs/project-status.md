@@ -10,6 +10,9 @@
   - All other maps are read only once.
 - **Tests:** 31 Blender tests (`tools/hhc_test.sh`, only in a file named `HHC.blend`) and pure-Python
   unit tests; a slow cost check against v0.5 (`tools/hhc_test.sh test_cost`).
+- **First test round fixes (node version 2):** Displacement left unconnected (Bump drew lines in Cycles
+  and doubled the cost), Scale computed from the source size, object scale compensated. Real-material
+  cost (boulder, Cycles): original 0.64 ms/sample, HHC Object 1.24, HHC UV 0.74.
 - **Cost of the HHC node vs v0.5 `AT Anti-Tile`** (same material, 512², fixtures, RTX 4090):
   Cycles 3.716 vs 3.704 ms/sample (+0.3%), EEVEE compile 1.31 vs 1.34 s; +5 nodes, about 3 compiled.
 
@@ -67,7 +70,8 @@ RTX 4090, Cycles in ms per sample; median of 3, viewports paused.
    remain recognisable, rotated. → Proposal: low-frequency macro variation on colour and roughness.
 6. **Stretching** on surfaces at about 45° between two axes (up to about 1.7×). Typical of every
    per-axis projection.
-7. **Non-uniform object scale:** not compensated in Object mode.
+7. ~~**Non-uniform object scale.**~~ Solved in node version 2: object coordinates and normals are taken
+   in metres, so Scale is per metre on any object and non-uniform scale no longer stretches.
 8. **Materials without a height map:** no fallback. → Proposal: use the colour luminance.
 9. **The Space menu of old test materials** is sometimes not restored by the rebuild: it falls back
    to the first item, Object.

@@ -60,10 +60,10 @@ def test_build_megascans(ctx):
     disp = _one(nt, "ShaderNodeDisplacement")
     assert abs(disp.inputs["Scale"].default_value - 0.02) < 1e-6
     assert abs(disp.inputs["Midlevel"].default_value - 0.5) < 1e-6
-    assert _src(disp.inputs["Height"]) == hhc and _src(out.inputs["Displacement"]) == disp
-    assert m.displacement_method == "BUMP"
+    assert _src(disp.inputs["Height"]) == hhc
+    assert not out.inputs["Displacement"].is_linked, "displacement must be left unconnected"
     frames = sorted(f.label for f in _of(nt, "NodeFrame"))
-    assert frames == ["Displacement", "Sampler", "Textures"], frames
+    assert frames == ["Displacement (not connected)", "Sampler", "Textures"], frames
     for nd in nt.nodes:
         assert nd.label.isascii(), nd.label
 
@@ -141,3 +141,42 @@ def test_convert_twice(ctx):
     assert (m1.name, m2.name) == ("hhc_t_rock_HHC", "hhc_t_rock_HHC.001"), (m1.name, m2.name)
     assert len([g for g in bpy.data.node_groups if g.name.startswith("HHC Anti-Tile")]) == 1
     assert len(bpy.data.images) == n_img
+
+
+def _plane(name, size=2.0, uv=True, scale=(1, 1, 1)):
+    h = size / 2
+    me = bpy.data.meshes.new("hhc_t_" + name)
+    me.from_pydata([(-h, -h, 0), (h, -h, 0), (h, h, 0), (-h, h, 0)], [], [(0, 1, 2, 3)])
+    if uv:
+        uvl = me.uv_layers.new(name="UVMap")
+        for i, c in enumerate(((0, 0), (1, 0), (1, 1), (0, 1))):
+            uvl.data[i].uv = c
+    ob = bpy.data.objects.new("hhc_t_" + name, me)
+    ob.scale = scale
+    bpy.context.scene.collection.objects.link(ob)
+    bpy.context.view_layer.update()
+    return ob
+
+
+def test_estimate_scale(ctx):
+    assert abs(build.estimate_scale(_plane("p2")) - 0.5) < 1e-3          # 2 m per UV unit
+    assert abs(build.estimate_scale(_plane("p2s", scale=(2, 2, 1))) - 0.25) < 1e-3
+    assert abs(build.estimate_scale(_plane("p2m"), uv_scale=2.0) - 1.0) < 1e-3
+    assert build.estimate_scale(_plane("nouv", uv=False)) == build.FALLBACK_SCALE == 0.5
+
+
+def test_build_sets_scale_from_object(ctx):
+    ms = collect.from_files(set_paths(ctx, "megascans"))
+    m = build.build_material(ms, "hhc_t_sc", _plane("sc", size=4.0))
+    assert abs(_one(m.node_tree, "ShaderNodeGroup").inputs["Scale"].default_value - 0.25) < 1e-3
+
+
+def test_build_constant_color_with_ao(ctx):
+    from height_hex_cutter.mapset import MapRef, MapSet
+    ao = collect.from_files(set_paths(ctx, "megascans")).maps["AO"]
+    ms = MapSet(maps={"Base Color": MapRef(None, constant=(0.5, 0.4, 0.3)), "AO": ao})
+    nt = build.build_material(ms, "hhc_t_cao").node_tree
+    mix = _src(_one(nt, "ShaderNodeBsdfPrincipled").inputs["Base Color"])
+    assert mix.bl_idname == "ShaderNodeMix" and mix.blend_type == "MULTIPLY"
+    assert not mix.inputs[6].is_linked and tuple(round(x, 3) for x in mix.inputs[6].default_value)[:3] == (0.5, 0.4, 0.3)
+    assert _src(mix.inputs[7]).bl_idname == "ShaderNodeTexImage"

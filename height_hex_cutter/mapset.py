@@ -23,6 +23,8 @@ class MapSet:
     principled: dict = field(default_factory=dict)
     ignored: list = field(default_factory=list)
     notes: list = field(default_factory=list)
+    uv_scale: float = 1.0              # Mapping scale of the source (repeats per UV unit)
+    node_values: dict = field(default_factory=dict)   # settings of a source HHC/AT node, kept as they are
     source_tree: object = None         # node tree the chains were read from (from_material only)
     source_bsdf: object = None         # its Principled BSDF
 

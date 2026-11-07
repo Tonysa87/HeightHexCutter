@@ -91,3 +91,85 @@ def test_group_versioning(ctx):
     assert got == main
     assert m2.node_tree.nodes[nd.name].node_tree == main
     assert len(_hhc_groups()) == 1, [x.name for x in _hhc_groups()]
+
+
+def test_group_update_reported(ctx):
+    g = groups.ensure_group()
+    g["hhc_version"] = groups.HHC_GROUP_VERSION - 1
+    groups.ensure_group()
+    assert f"updated to version {groups.HHC_GROUP_VERSION}" in groups.last_notice, groups.last_notice
+    groups.ensure_group()
+    assert groups.last_notice == "", "notice must be cleared when nothing was updated"
+
+
+def test_linked_group_ignored(ctx):
+    import os
+    g = groups.ensure_group()
+    path = os.path.join(ctx.tmp, "hhc_t_grouplib.blend")
+    bpy.data.libraries.write(path, {g}, fake_user=True)
+    bpy.data.node_groups.remove(g)
+    with bpy.data.libraries.load(path, link=True) as (src, dst):
+        dst.node_groups = ["HHC Anti-Tile"]
+    linked = dst.node_groups[0]
+    assert linked.library is not None
+    got = groups.ensure_group()
+    assert got.library is None and got != linked
+    lib = linked.library
+    bpy.data.node_groups.remove(linked)
+    bpy.data.libraries.remove(lib)
+    os.remove(path)
+
+
+def _render_mean_diff(ctx, ob_a, ob_b, mat):
+    import numpy as np
+    sc = bpy.data.scenes.new("hhc_t_scene")
+    cam = bpy.data.objects.new("hhc_t_cam", bpy.data.cameras.new("hhc_t_cam"))
+    cam.data.type = "ORTHO"
+    cam.data.ortho_scale = 1.6
+    cam.location = (0, 0, 5)
+    sc.collection.objects.link(cam)
+    sc.camera = cam
+    sun = bpy.data.objects.new("hhc_t_sun", bpy.data.lights.new("hhc_t_sun", "SUN"))
+    sun.rotation_euler = (0.9, 0, 0.5)
+    sc.collection.objects.link(sun)
+    sc.render.engine = "CYCLES"
+    sc.cycles.samples = 16
+    sc.cycles.seed = 0
+    sc.render.resolution_x = sc.render.resolution_y = 64
+    pix = []
+    for ob in (ob_a, ob_b):
+        for c in list(ob.users_collection):
+            c.objects.unlink(ob)
+        sc.collection.objects.link(ob)
+        ob.data.materials.clear()
+        ob.data.materials.append(mat)
+        path = f"{ctx.tmp}\\hhc_t_scale_{ob.name}.png"
+        sc.render.filepath = path
+        bpy.ops.render.render(write_still=True, scene=sc.name)
+        sc.collection.objects.unlink(ob)
+        im = bpy.data.images.load(path)
+        im.name = "hhc_t_render"
+        a = np.empty(64 * 64 * 4, np.float32)
+        im.pixels.foreach_get(a)
+        bpy.data.images.remove(im)
+        pix.append(a.reshape(-1, 4)[:, :3])
+    return float(np.abs(pix[0] - pix[1]).mean())
+
+
+def test_object_scale_compensated(ctx):
+    """A 1 m plane scaled 2x renders like a 2 m plane: Scale means repeats per metre."""
+    from height_hex_cutter import build, collect
+    from tests.blender.test_build import _plane
+    from tests.blender.test_files import set_paths
+    m = build.build_material(collect.from_files(set_paths(ctx, "megascans")), "hhc_t_scl")
+    _one = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeGroup")
+    _one.inputs["Scale"].default_value = 1.0
+    d_uniform = _render_mean_diff(ctx, _plane("half", size=1.0, scale=(2, 2, 1)), _plane("full", size=2.0), m)
+    me = bpy.data.meshes.new("hhc_t_thin")
+    me.from_pydata([(-0.5, -1, 0), (0.5, -1, 0), (0.5, 1, 0), (-0.5, 1, 0)], [], [(0, 1, 2, 3)])
+    thin = bpy.data.objects.new("hhc_t_thin", me)
+    thin.scale = (2, 1, 1)
+    bpy.context.scene.collection.objects.link(thin)
+    d_nonuni = _render_mean_diff(ctx, thin, _plane("full2", size=2.0), m)
+    ctx.info.update(diff_uniform=round(d_uniform, 4), diff_nonuniform=round(d_nonuni, 4))
+    assert d_uniform < 0.01 and d_nonuni < 0.01, (d_uniform, d_nonuni)

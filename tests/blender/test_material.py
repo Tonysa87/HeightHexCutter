@@ -210,3 +210,34 @@ def test_material_colorspace_note(ctx):
     ms = collect.from_material(s.m)
     assert "T_rock_4K_Roughness.png: colour space sRGB, expected Non-Color (not changed)" in ms.notes, ms.notes
     assert im["T_rock_4K_Roughness.png"].colorspace_settings.name == "sRGB"
+
+
+def test_material_hhc_settings_kept(ctx):
+    from tests.blender.test_build import _plane
+    m1 = build.build_material(collect.from_files(set_paths(ctx, "megascans")), "hhc_t_keep")
+    n1 = _one(m1.node_tree, "ShaderNodeGroup")
+    vals = {"Height Influence": 3.0, "Scale": 2.5, "Seed": 7.0, "Edge Warp": 0.4}
+    for k, v in vals.items():
+        n1.inputs[k].default_value = v
+    n1.inputs["Projection"].default_value = "UV"
+    m2 = build.build_material(collect.from_material(m1), "hhc_t_keep2", _plane("keep"))
+    n2 = _one(m2.node_tree, "ShaderNodeGroup")
+    for k, v in vals.items():
+        assert abs(n2.inputs[k].default_value - v) < 1e-6, (k, n2.inputs[k].default_value)
+    assert n2.inputs["Projection"].default_value == "UV"
+
+
+def test_material_mapping_scale(ctx):
+    from tests.blender.test_build import _plane
+    im = _imgs(ctx, "megascans")
+    s = Src("mapping")
+    mp = s.node("ShaderNodeMapping")
+    mp.inputs["Scale"].default_value = (2.0, 2.0, 2.0)
+    s.link(s.uv.outputs["UV"], mp.inputs["Vector"])
+    t = s.tex(im["T_rock_4K_BaseColor.png"])
+    s.link(mp.outputs["Vector"], t.inputs["Vector"])
+    s.link(t.outputs["Color"], s.bsdf.inputs["Base Color"])
+    ms = collect.from_material(s.m)
+    assert abs(ms.uv_scale - 2.0) < 1e-6, ms.uv_scale
+    m = build.build_material(ms, s.m.name, _plane("map"))
+    assert abs(_one(m.node_tree, "ShaderNodeGroup").inputs["Scale"].default_value - 1.0) < 1e-3

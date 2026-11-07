@@ -96,15 +96,20 @@ def from_files(paths):
     ms = MapSet()
     single, orm, normal, new = {}, None, None, []
     for p in paths:
+        name = os.path.basename(p.replace("\\", "/"))
         if os.path.splitext(p)[1].lower() not in IMAGE_EXTS:
+            ms.ignored.append(f"{name} (not an image)")
             continue
         ch, dx = detect_channel(p)
-        name = os.path.basename(p.replace("\\", "/"))
         if ch is None:
             ms.ignored.append(name)
             continue
         if ch == "Normal" and normal is not None and (dx or not normal[1]):
+            ms.ignored.append(f"{name} (duplicate Normal)")
             continue                      # keep the first normal; an OpenGL one replaces a DirectX one
+        if (ch in single) or (ch == "ORM" and orm is not None):
+            ms.ignored.append(f"{name} (duplicate {ch})")
+            continue
         img, is_new = load_image(p)
         if is_new:
             new.append(img)
@@ -279,6 +284,9 @@ def _read_sampler(ms, nt):
                     ms.maps["Height"] = MapRef(img, chan, fallback=True)
                 else:
                     ms.maps["Height"] = MapRef(img, chan)
+        for i in gn.inputs:
+            if i.name not in ("Sampler", "Vector") and not i.is_linked and hasattr(i, "default_value"):
+                ms.node_values[i.name] = _value(i.default_value)
         if "Normal Map" in gn.inputs:
             ms.normal_dx = gn.inputs["Normal Map"].default_value == "DirectX"
         if "Normal Strength" in gn.inputs and not gn.inputs["Normal Strength"].is_linked:
@@ -299,6 +307,28 @@ def _fill_in(ms, nt):
             if ch == "Normal":
                 ms.normal_dx = dx
         used.add(t.image)
+
+
+def _mapping_scale(nt, ms):
+    """Scale of the Mapping node in front of the source textures (repeats per UV unit), 1 if none."""
+    imgs = {r.image for r in ms.maps.values() if r.image is not None}
+    for t in nt.nodes:
+        if t.bl_idname != "ShaderNodeTexImage" or t.image not in imgs:
+            continue
+        sock = t.inputs["Vector"]
+        while sock.is_linked:
+            n = sock.links[0].from_node
+            if n.bl_idname == "ShaderNodeMapping":
+                sc = n.inputs["Scale"]
+                if sc.is_linked:
+                    return 1.0
+                sx, sy = sc.default_value[0], sc.default_value[1]
+                v = (abs(sx) + abs(sy)) / 2 or 1.0
+                return 1.0 / v if n.vector_type == "TEXTURE" else v
+            if n.bl_idname != "NodeReroute":
+                break
+            sock = n.inputs[0]
+    return 1.0
 
 
 def from_material(mat):
@@ -325,6 +355,7 @@ def from_material(mat):
                 ms.disp_scale = d.inputs["Scale"].default_value
     _fill_in(ms, nt)
     _read_sampler(ms, nt)
+    ms.uv_scale = _mapping_scale(nt, ms)
     resolve_constants(ms)
     colorspace_notes(ms)
     return ms

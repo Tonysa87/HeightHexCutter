@@ -6,8 +6,9 @@ import bpy
 from . import groups
 from .collect import image_channel
 
-FRAME_LABELS = {"sampler": "Sampler", "textures": "Textures", "displacement": "Displacement"}
+FRAME_LABELS = {"sampler": "Sampler", "textures": "Textures", "displacement": "Displacement (not connected)"}
 DISP_SCALE = 0.02
+FALLBACK_SCALE = 0.5            # repeats per metre when the object has no usable UVs (2 m per texture)
 CHAN_OUT = {"R": 0, "G": 1, "B": 2}
 TEXTURE_ORDER = ("Base Color", "AO", "Roughness", "Metallic")
 FRAME_COLORS = {"sampler": (0.20, 0.16, 0.10), "textures": (0.12, 0.17, 0.12), "displacement": (0.20, 0.12, 0.12)}
@@ -142,7 +143,7 @@ def _copy_chain(b, ms, r, texs, bsdf):
         else:
             continue
         fn = l.from_node
-        src_node = texs[fn.image.name] if fn.bl_idname == "ShaderNodeTexImage" else copies[fn.name]
+        src_node = texs[fn.image] if fn.bl_idname == "ShaderNodeTexImage" else copies[fn.name]
         frm = _sock(src_node.outputs, l.from_socket)
         if frm is not None and to is not None:
             b.link(frm, to)
@@ -218,8 +219,10 @@ def _height_fallback(ms):
         ms.maps["Height"] = type(ao)(ao.image, chan=ao.chan, fallback=True)
 
 
-def build_material(ms, base_name):
-    """New material `<base_name>_HHC` built from `ms`. Neither `ms` nor its sources are modified."""
+def build_material(ms, base_name, ob=None):
+    """New material `<base_name>_HHC` built from `ms`. Neither `ms` nor its sources are modified.
+    `ob`: the object that will receive it; the node Scale is computed from its UVs (see estimate_scale),
+    unless the source was an HHC material, whose node settings are kept."""
     ms = copy.copy(ms)
     ms.maps = dict(ms.maps)
     _height_fallback(ms)
@@ -238,6 +241,15 @@ def build_material(ms, base_name):
     if ms.normal_dx:
         hhc.inputs["Normal Map"].default_value = "DirectX"
     hhc.inputs["Normal Strength"].default_value = ms.normal_strength
+    if ms.node_values:
+        for k, v in ms.node_values.items():
+            if k in hhc.inputs and hasattr(hhc.inputs[k], "default_value"):
+                try:
+                    hhc.inputs[k].default_value = v
+                except (TypeError, ValueError):
+                    pass
+    elif ob is not None:
+        hhc.inputs["Scale"].default_value = estimate_scale(ob, ms.uv_scale)
     co, s_nodes = _sampler(b, ms, hx)
     b.link(co.outputs["Closure"], hhc.inputs["Sampler"])
     b.frame("sampler", s_nodes)
@@ -249,10 +261,10 @@ def build_material(ms, base_name):
 
     def tex(img, label):
         nonlocal y
-        if img.name not in texs:
-            texs[img.name] = _image_node(b, img, -350, y, label, hhc.outputs["Vector"])
+        if img not in texs:
+            texs[img] = _image_node(b, img, -350, y, label, hhc.outputs["Vector"])
             y -= 300
-        return texs[img.name]
+        return texs[img]
 
     for ch in TEXTURE_ORDER:
         r = ms.maps.get(ch)
@@ -285,7 +297,14 @@ def build_material(ms, base_name):
         else:
             b.link(socks["Base Color"], bsdf.inputs["Base Color"])
     elif col is not None and col.constant is not None:
-        _set_input(bsdf.inputs["Base Color"], col.constant)
+        if "AO" in socks:                 # uniform colour, textured AO: still multiply
+            mix = b.node("ShaderNodeMix", 30, 520, data_type="RGBA", blend_type="MULTIPLY")
+            mix.inputs["Factor"].default_value = 1.0
+            _set_input(mix.inputs[6], col.constant)
+            b.link(socks["AO"], mix.inputs[7])
+            b.link(mix.outputs[2], bsdf.inputs["Base Color"])
+        else:
+            _set_input(bsdf.inputs["Base Color"], col.constant)
     for ch in ("Roughness", "Metallic"):
         r = ms.maps.get(ch)
         if ch in chained:
@@ -301,10 +320,41 @@ def build_material(ms, base_name):
         disp.inputs["Scale"].default_value = ms.disp_scale if ms.disp_scale is not None else DISP_SCALE
         disp.inputs["Midlevel"].default_value = 0.5
         b.link(hhc.outputs["Height"], disp.inputs["Height"])
-        b.link(disp.outputs["Displacement"], out.inputs["Displacement"])
+        # not linked to the output: Blender's bump re-runs the node at offset points, each with its own
+        # random cell choice (lines in Cycles, ~2x cost). Link it by hand for true displacement.
         b.frame("displacement", [disp])
-        mat.displacement_method = "BUMP"
     return mat
+
+
+def estimate_scale(ob, uv_scale=1.0):
+    """HHC Scale (repeats per metre) that gives the texture the size it has with the object's UVs:
+    uv_scale / (metres per UV unit), metres per UV unit = sqrt(world area / UV area) of the active UV map."""
+    import numpy as np
+    me = getattr(ob, "data", None)
+    if ob is None or ob.type != "MESH" or me is None or me.uv_layers.active is None:
+        return FALLBACK_SCALE
+    me.calc_loop_triangles()
+    nt = len(me.loop_triangles)
+    if nt == 0:
+        return FALLBACK_SCALE
+    tl = np.empty(nt * 3, np.int32)
+    me.loop_triangles.foreach_get("loops", tl)
+    lv = np.empty(len(me.loops), np.int32)
+    me.loops.foreach_get("vertex_index", lv)
+    co = np.empty(len(me.vertices) * 3, np.float64)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3) @ np.array(ob.matrix_world.to_3x3()).T
+    uv = np.empty(len(me.loops) * 2, np.float64)
+    me.uv_layers.active.data.foreach_get("uv", uv)
+    uv = uv.reshape(-1, 2)
+    p = co[lv[tl]].reshape(-1, 3, 3)
+    a_world = 0.5 * np.linalg.norm(np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0]), axis=1).sum()
+    u = uv[tl].reshape(-1, 3, 2)
+    e1, e2 = u[:, 1] - u[:, 0], u[:, 2] - u[:, 0]
+    a_uv = 0.5 * np.abs(e1[:, 0] * e2[:, 1] - e1[:, 1] * e2[:, 0]).sum()
+    if a_uv < 1e-12 or a_world <= 0.0:
+        return FALLBACK_SCALE
+    return float(uv_scale / np.sqrt(a_world / a_uv))
 
 
 def assign_to_object(ob, mat):

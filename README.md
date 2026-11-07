@@ -53,20 +53,25 @@ reassigned), as the first slot if it has none. The status bar reports which file
                                               │ Sampler          Roughness ────────────────┘   ▲   ▲            ▲
                                        [HHC Anti-Tile] ── Vector ─> all textures            Normal Metallic  Displacement
                                               ├─ Normal ──────────────────────────────────────┘     (value)       │
-                                              └─ Height ─────────────────────────────> [Displacement] Bump Only
+                                              └─ Height ─────────────────> [Displacement] (not connected)
 ```
 - **Height** decides where cells meet. Without a height map the sampler uses the **AO** map, or else
   the **Base Color through a Color Ramp** (label *Height from Base Color (adjust)*): tune it if light
   does not mean "high" in that texture.
-- **Displacement** is created only with a real height map, with the material set to **Bump Only**.
-  Without one there is no displacement node; add it by hand if you find a height map later.
+- **Displacement** is created only with a real height map, and **left unconnected**: Blender's bump
+  re-runs the node at nearby points, each with its own random cell choice, which draws straight lines in
+  Cycles and doubles the cost. The normal map already carries the relief. Connect it by hand to the
+  Material Output for true displacement on a subdivided mesh.
+- **Scale** is set so the texture has the size it had in the source: from the object's UVs and the
+  source's Mapping scale (from image files: as with plain UVs). Objects without UVs get 0.5 (2 m per
+  texture). Re-converting an HHC material keeps its node settings.
 
 ## `HHC Anti-Tile` parameters
 
 | Parameter | Meaning | Default |
 |---|---|---|
 | Projection | **UV** (uses Vector, or the active UV map when nothing is connected) / **Object** (no UVs, projection on the 2 dominant axes). The branch not chosen is not compiled | Object |
-| Scale | UV: repeats per UV unit. Object: repeats per metre | 1 |
+| Scale | UV: repeats per UV unit. Object: repeats per metre, whatever the object's scale (set at conversion from the source size) | 1 |
 | Cell Size | distance between cell centres, in texture repeats | 1 |
 | Rotation | random rotation per cell (0 = none, 1 = full turn) | 1 |
 | Seed | random variant | 0 |
@@ -83,8 +88,12 @@ Debug outputs, free when unconnected: **Cell Color** (a random colour per cell) 
 
 ### Usage notes
 - **EEVEE:** keep Softness low (about 0.005).
-- **Displacement in Bump mode** evaluates the node 3 times and can show streaks along the projection
-  axes in Object mode. The normal map already carries the relief; an internal Height Bump is planned.
+- **Displacement in Bump mode** (if you connect it) evaluates the node 3 times and shows straight lines
+  in Cycles. The normal map already carries the relief; an internal Height Bump is planned.
+- **UV projection** needs a UV map: on a mesh without one the material renders as a flat colour (the
+  report warns about it).
+- **Cost** (Cycles, measured): Object projection about 2× a plain textured material (two projections,
+  6 height reads), UV projection about +15–20%; EEVEE compilation about +0.2 s.
 - **True displacement** (geometry) is not supported yet: random dithering does not average over
   vertices. On flat-shaded meshes it also opens cracks along face edges: use smooth shading.
 - **Bake:** dithering converges in a Cycles bake (results/bake_check).
@@ -112,8 +121,9 @@ height_hex_cutter/          the extension: manifest, operators/panel (ui.py), ma
                             (channels.py, uniform.py, collect.py), material builder (build.py),
                             node group setup (groups.py) and builders (nodes/)
 tests/unit/                 pure-Python tests:      python3 -m unittest discover tests/unit
-tests/blender/              tests run inside Blender: tools/hhc_test.sh [pattern]
-                            (only in a file named HHC.blend; slow cost check: tools/hhc_test.sh test_cost)
+tests/blender/              tests run inside Blender: tools/hhc_test_headless.sh [pattern] (separate headless
+                            Blender, fresh HHC.blend) or tools/hhc_test.sh [pattern] (the open Blender, only
+                            in a file named HHC.blend); slow cost check: pattern test_cost
 tests/fixtures/make_sets.py tiny generated texture sets used by the tests
 bench/                      timing (Cycles ms/sample, EEVEE compile) and image metrics
 tools/                      WSL → Blender (Windows) bridge through the Blender MCP add-on (127.0.0.1:9876)

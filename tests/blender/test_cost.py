@@ -51,16 +51,36 @@ def _swap_group(src, name, tree):
 
 
 def test_cost_vs_v05(ctx):
-    BE.setup(PREFIX, res=512)
+    """Interleaved A/B timing (v0.5, HHC, v0.5, HHC...): the minimum of each is robust to other GPU users."""
+    import os
+    sc = BE.setup(PREFIX, res=512)
     hhc = build.build_material(collect.from_files(set_paths(ctx, "megascans")), PREFIX + "cost")
     old = _swap_group(hhc, PREFIX + "cost_v05", _v05_group(ctx))
-    kw = dict(prefix=PREFIX, spp_lo=16, spp_hi=272, reps=3)
-    r_old = BE.run(old.name, ctx.tmp, **kw)
-    r_new = BE.run(hhc.name, ctx.tmp, **kw)
+    plane = bpy.data.objects[PREFIX + "Plane"]
+    sc.render.engine = "CYCLES"
+    tmp = os.path.join(ctx.tmp, "hhc_t_ab.png")
+
+    def ms(m):
+        plane.data.materials.clear()
+        plane.data.materials.append(m)
+        sc.cycles.samples = 16
+        a = BE.render(sc, tmp)
+        sc.cycles.samples = 272
+        b = BE.render(sc, tmp)
+        return 1000 * (b - a) / 256
+
+    with BE.QuietViewports():
+        ms(old), ms(hhc)                          # warm-up: kernels, images
+        t_old, t_new = [], []
+        for _ in range(7):
+            t_old.append(ms(old))
+            t_new.append(ms(hhc))
     n_old, n_new = BE.node_count(old.node_tree), BE.node_count(hhc.node_tree)
-    ctx.info.update(v05=r_old, hhc=r_new, nodes_v05=n_old, nodes_hhc=n_new)
-    assert r_new["cycles_ms_per_spp"] <= r_old["cycles_ms_per_spp"] * 1.05, (r_old, r_new)
-    assert n_new - n_old <= 5, (n_old, n_new)
+    ctx.info.update(v05_min=round(min(t_old), 3), hhc_min=round(min(t_new), 3),
+                    v05_median=round(sorted(t_old)[3], 3), hhc_median=round(sorted(t_new)[3], 3),
+                    nodes_v05=n_old, nodes_hhc=n_new)
+    assert min(t_new) <= min(t_old) * 1.05, (t_old, t_new)
+    assert n_new - n_old <= 20, (n_old, n_new)     # v2: object-scale compensation, normal flip
 
 
 def _render_pixels(ctx, sc, mat, tag):

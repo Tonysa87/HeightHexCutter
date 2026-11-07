@@ -45,8 +45,16 @@ def _spread_too_wide(img, tol):
     return [float(px[:, min(i, n - 1)].max() - px[:, min(i, n - 1)].min()) > 2 * tol for i in range(3)]
 
 
+def _mtime(img):
+    try:
+        import os
+        return os.path.getmtime(bpy.path.abspath(img.filepath, library=img.library)) if img.filepath else 0.0
+    except (OSError, AttributeError):
+        return 0.0
+
+
 def _key(img):
-    return (img.name_full, img.filepath, tuple(img.size))
+    return (img.name_full, img.filepath, tuple(img.size), _mtime(img))
 
 
 def _read(img):

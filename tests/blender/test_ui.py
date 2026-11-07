@@ -36,6 +36,8 @@ def _src_material(ctx, name):
 
 
 def test_register_cycle(ctx):
+    if any(k.endswith("height_hex_cutter") for k in bpy.context.preferences.addons.keys()):
+        return                                # an installed copy uses the same ids: do not unregister it
     height_hex_cutter.register()
     height_hex_cutter.unregister()
     with _Registered():
@@ -103,14 +105,18 @@ def test_no_valid_object(ctx):
     n = len(bpy.data.materials)
     empty = bpy.data.objects.new("hhc_t_empty", None)
     bpy.context.scene.collection.objects.link(empty)
+    calls = (lambda: bpy.ops.hhc.from_material(material=src.name),
+             lambda: bpy.ops.hhc.name_files(name="hhc_t_x", files_json=json.dumps(set_paths(ctx, "megascans"))),
+             lambda: bpy.ops.hhc.from_files("INVOKE_DEFAULT"))
     with _Registered():
         for active in (None, empty):
             bpy.context.view_layer.objects.active = active
-            try:
-                r = bpy.ops.hhc.from_material(material=src.name)
-            except RuntimeError:
-                r = {"CANCELLED"}
-            assert r == {"CANCELLED"}, (active, r)
+            for call in calls:
+                try:
+                    r = call()
+                except RuntimeError:
+                    r = {"CANCELLED"}
+                assert r == {"CANCELLED"}, (active, r)
     assert len(bpy.data.materials) == n, "a material was created without a valid object"
 
 
@@ -136,3 +142,30 @@ def test_op_errors_leave_nothing(ctx):
             ui.build.assign_to_object = orig
     assert r == {"CANCELLED"}, r
     assert "hhc_t_boom_HHC" not in bpy.data.materials, "half-built material left behind"
+
+
+def test_asset_menu_once(ctx):
+    def _asset_menu(self, context):           # stands for the same add-on loaded from another path
+        pass
+    _asset_menu.__module__ = "bl_ext.user_default.height_hex_cutter.ui"
+    menu = bpy.types.ASSETBROWSER_MT_context_menu
+    menu.append(_asset_menu)
+    try:
+        with _Registered():
+            funcs = [f for f in menu._dyn_ui_initialize() if getattr(f, "__name__", "") == "_asset_menu"
+                     and getattr(f, "__module__", "").endswith("height_hex_cutter.ui")]
+            assert len(funcs) == 1, [f.__module__ for f in funcs]
+    finally:
+        try:
+            menu.remove(_asset_menu)
+        except ValueError:
+            pass
+
+
+def test_report_no_uv(ctx):
+    me = bpy.data.meshes.new("hhc_t_nouv")
+    me.from_pydata([(0, 0, 0), (1, 0, 0), (1, 1, 0)], [], [(0, 1, 2)])
+    ob = bpy.data.objects.new("hhc_t_nouv", me)
+    bpy.context.scene.collection.objects.link(ob)
+    _, report = ui.convert_files(set_paths(ctx, "megascans"), "hhc_t_nouv", ob)
+    assert "no UV map" in report, report

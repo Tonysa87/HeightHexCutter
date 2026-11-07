@@ -4,7 +4,7 @@ import bpy
 
 class G:
     def __init__(self, name, desc=""):
-        g = bpy.data.node_groups.get(name)
+        g = next((x for x in bpy.data.node_groups if x.name == name and x.library is None), None)
         if g is None:
             g = bpy.data.node_groups.new(name, "ShaderNodeTree")
         else:

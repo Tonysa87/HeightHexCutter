@@ -6,11 +6,11 @@ HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$HERE")"
 mkdir -p "$ROOT/tools/.req" "$ROOT/tests/fixtures/v05"
 # the cost test compares against the v0.5 node: extract its builders from the git tag (git-ignored copy)
 for f in ngkit build_v1 build_v3; do
-  [ -f "$ROOT/tests/fixtures/v05/$f.py" ] || git -C "$ROOT" show "v0.5:nodes/$f.py" > "$ROOT/tests/fixtures/v05/$f.py"
+  [ -s "$ROOT/tests/fixtures/v05/$f.py" ] || git -C "$ROOT" show "v0.5:nodes/$f.py" > "$ROOT/tests/fixtures/v05/$f.py" || exit 1
 done
 [ -d "$ROOT/tests/fixtures/sets" ] || python3 "$ROOT/tests/fixtures/make_sets.py" > /dev/null
 F=$(mktemp "$ROOT/tools/.req/test_XXXX.py")
-UNC="//wsl.localhost/Ubuntu-24.04$ROOT"
+UNC="$(wslpath -w "$ROOT" | sed "s#\\\\#/#g")"
 cat > "$F" <<PY
 import sys
 ROOT = "$UNC"
